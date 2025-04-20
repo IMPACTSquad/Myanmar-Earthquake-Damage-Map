@@ -1,0 +1,994 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Myanmar Earthquake Building Damage Assessment</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <link href="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+
+    <style>
+        /* Base styles */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        /* Map container */
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        /* Control panel */
+        .map-controls {
+            width: 150px;
+            min-width: 150px;
+            max-width: 150px;
+            height: 360px; /* Adjusted height if needed */
+            min-height: 360px;
+            max-height: 360px;
+            overflow-y: auto;
+
+            position: absolute;
+            left: 10px;
+            top: 120px; /* Adjusted top position */
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            z-index: 998; /* Ensure it's below data source controls */
+            }
+
+        .filter-group {
+            margin-bottom: 12px;
+        }
+
+        .filter-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .filter-group text {
+            display: block;
+            font-style: italic;
+            margin-bottom: 5px;
+            font-size: 10px;
+            color: #333;
+        }
+
+        select {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        /* Loading indicator */
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+
+        /* Error display */
+        #error-display {
+            position: absolute;
+            bottom: 20px;
+            left: 180px; /* Adjusted to not overlap new overlay */
+            background: #ffdddd;
+            color: #cc0000;
+            padding: 10px;
+            border-radius: 4px;
+            max-width: 300px;
+            z-index: 1000;
+            display: none;
+        }
+
+        /* Legend */
+        .map-overlay {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            z-index: 999;
+        }
+
+        .legend-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .legend-item {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .legend-key {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        /* Data source selector */
+        .data-source-controls {
+            width: 150px;
+            min-width: 150px;
+            max-width: 150px;
+            height: 70px; /* Adjusted height */
+            min-height: 70px;
+            max-height: 70px;
+            overflow-y: auto;
+
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            z-index: 999; /* Ensure it's above filter controls */
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-width: 300px;
+        }
+
+        .source-toggle {
+            margin-bottom: 8px;
+        }
+
+        .source-toggle input {
+            margin-right: 8px;
+        }
+
+        /* Summary Statistics Overlay */
+        #summary-stats-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            z-index: 999;
+            font-size: 12px;
+            min-width: 150px;
+            max-width: 250px; /* Adjust as needed */
+        }
+        #summary-stats-overlay .stats-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        #summary-stats-overlay .stats-content {
+             line-height: 1.5;
+        }
+        #summary-stats-overlay .stats-loading {
+            font-style: italic;
+            color: #555;
+        }
+         #summary-stats-overlay .stats-error {
+            color: #cc0000;
+            font-weight: bold;
+         }
+
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="loading">Loading map data...</div>
+    <div id="error-display"></div>
+
+    <!-- Control panel -->
+    <div class="map-controls">
+        <div class="filter-group">
+            <label for="basemap">Base Map Style:</label>
+            <select id="basemap"></select>
+        </div>
+
+        <div class="filter-group">
+            <label>Filters:</label>
+            <text>Switch Base Map Style to refresh filters when filters are not shown</text>
+            <div class="filter-group">
+                <label for="filter-degree">Damage Level:</label>
+                <select id="filter-degree">
+                    <option value="all">All</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-name1">Region (Level 1):</label>
+                <select id="filter-name1">
+                    <option value="all">All</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-name2">Region (Level 2):</label>
+                <select id="filter-name2">
+                    <option value="all">All</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-name3">Region (Level 3):</label>
+                <select id="filter-name3">
+                    <option value="all">All</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Source Controls -->
+    <div class="data-source-controls">
+        <div class="filter-group">
+            <label for="data-source">Data Source:</label>
+            <select id="data-source">
+                <option value="all">All Sources</option>
+                <option value="doc1">THAILAND-01</option>
+                <option value="doc2">THAILAND-02</option>
+                <option value="doc5">THAILAND-05</option>
+                <option value="doc16">MYANMAR-16</option>
+                <option value="doc17">MYANMAR-17</option>
+                <option value="doc18">MYANMAR-18</option>
+                <option value="doc19_1">MYANMAR-19_1</option>
+                <option value="doc19_2">MYANMAR-19_2</option>
+                <option value="doc20">MYANMAR-20</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="map-overlay" id="legend">
+        <div class="legend-header">Degree of Change</div>
+    </div>
+
+    <!-- Summary Statistics Overlay -->
+    <div id="summary-stats-overlay">
+        <div class="stats-header">Summary of Selected Region</div>
+        <div class="stats-content stats-loading">Loading summary data...</div>
+    </div>
+
+    <script>
+        // ======================
+        // Global Configuration
+        // ======================
+        const sourceConfig = {
+            doc1: { url: 'mapbox://handing.3near8d6', sourceLayer: 'c01_point_final-4cugas', center: [100.534, 13.762], zoom: 12 },
+            doc2: { url: 'mapbox://handing.84lk5x2n', sourceLayer: 'c02_point_final-a0ugnm', center: [100.496, 14.634], zoom: 12 },
+            doc5: { url: 'mapbox://handing.ayks5t24', sourceLayer: 'c05_point_final-beo7c8', center: [98.985, 18.789], zoom: 12 },
+            doc16: { url: 'mapbox://handing.at1ehe2s', sourceLayer: 'c16_point_final-ckg7hv', center: [96.999, 20.779], zoom: 12 },
+            doc17: { url: 'mapbox://handing.0alryad9', sourceLayer: 'c17_point_final-dsowtg', center: [97.870, 22.475], zoom: 12 },
+            doc18: { url: 'mapbox://handing.44bvuzp4', sourceLayer: 'c18_point_final-3iyp6l', center: [95.703, 22.889], zoom: 12 },
+            doc19_1: { url: 'mapbox://handing.44ejgl63', sourceLayer: 'c19_1_point_final-211kej', center: [96.099, 21.888], zoom: 12 },
+            doc19_2: { url: 'mapbox://handing.bdcc4doj', sourceLayer: 'c19_2_point_final-dbnem7', center: [96.699, 22.291], zoom: 12 },
+            doc20: { url: 'mapbox://handing.8x1id2ny', sourceLayer: 'c20_point_final-1hc83y', center: [97.000, 20.824], zoom: 12 },
+        };
+
+        const legendConfig = {
+            layers: ['very low', 'low', 'medium', 'high'],
+            colors: ['#ffba7a', '#ef350b', '#cc0e00', '#7a0000']
+        };
+
+        // Set to track currently loaded sources
+        const loadedSources = new Set();
+        let activeSourceFilter = 'all';
+
+        // Cache for filter values specific to each data source
+        const sourceFilterCache = {
+            all: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            // Initialize empty sets for each doc...
+            doc1: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc2: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc5: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc16: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc17: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc18: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc19_1: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc19_2: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+            doc20: { 'filter-degree': new Set(), 'filter-name1': new Set(), 'filter-name2': new Set(), 'filter-name3': new Set() },
+        };
+
+        // Global variable to hold parsed summary stats data
+        let summaryStatsData = null;
+        const summaryStatsOverlayContent = document.querySelector('#summary-stats-overlay .stats-content');
+
+
+        // ======================
+        // Map Initialization
+        // ======================
+        mapboxgl.accessToken = 'pk.eyJ1IjoiaGFuZGluZyIsImEiOiJjbTllNm00Mm8xMzB6MmpxcWdycGllOWtrIn0.Zia5ORJ6mB5VVXrnpIfkwQ';
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: [98.985, 18.789],
+            zoom: 12,
+            minZoom: 2,
+            maxZoom: 18
+        });
+
+        // ======================
+        // Summary Stats Data Handling
+        // ======================
+        async function loadSummaryStats() {
+            // Ensure the overlay element exists
+             if (!summaryStatsOverlayContent) {
+                 console.error("Summary stats overlay content element not found during load.");
+                 return;
+             }
+             summaryStatsOverlayContent.className = 'stats-content stats-loading';
+             summaryStatsOverlayContent.textContent = 'Loading summary data...';
+             summaryStatsData = null; // Reset data while loading
+
+            try {
+                // Fetch the external CSV file
+                const response = await fetch('summary_stats_csv.csv'); // Assumes CSV is in the same directory
+
+                if (!response.ok) {
+                    // Handle HTTP errors (like 404 Not Found)
+                    throw new Error(`HTTP error! status: ${response.status} - Failed to fetch summary_stats_csv.csv`);
+                }
+
+                // Get the CSV content as text
+                const csvText = await response.text();
+
+                // Parse the fetched CSV text
+                summaryStatsData = parseCSV(csvText);
+                console.log(`Loaded and parsed ${summaryStatsData.length} summary statistics rows from external file.`);
+
+                // Update the summary stats display now that data is available
+                updateSummaryStats();
+
+            } catch (error) {
+                console.error('Error loading or parsing summary stats CSV:', error);
+                if (summaryStatsOverlayContent) {
+                    summaryStatsOverlayContent.className = 'stats-content stats-error'; // Add error class
+                    summaryStatsOverlayContent.textContent = 'Error loading summary data.';
+                }
+                summaryStatsData = null; // Ensure data is null on error
+            }
+        }
+
+        function parseCSV(csvText) {
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) return []; // Need header + data
+
+            // Handle potential BOM at the start of the header
+            const headerLine = lines[0].trim().replace(/^\uFEFF/, '');
+            const headers = headerLine.split(',').map(h => h.trim());
+            const data = [];
+
+            // Find indices for required columns
+            const name1Index = headers.indexOf('NAME_1');
+            const name2Index = headers.indexOf('NAME_2');
+            const name3Index = headers.indexOf('NAME_3');
+            const veryLowIndex = headers.indexOf('very low');
+            const lowIndex = headers.indexOf('low');
+            const mediumIndex = headers.indexOf('medium');
+            const highIndex = headers.indexOf('high');
+
+            if (name1Index === -1 || name2Index === -1 || name3Index === -1 || veryLowIndex === -1 || lowIndex === -1 || mediumIndex === -1 || highIndex === -1) {
+                console.error("CSV headers are missing required columns");
+                if (summaryStatsOverlayContent) {
+                    summaryStatsOverlayContent.className = 'stats-content stats-error';
+                    summaryStatsOverlayContent.textContent = 'CSV header error.';
+                }
+                return [];
+            }
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].trim().split(',');
+                if (values.length === headers.length) {
+                    const row = {
+                        name1: values[name1Index].trim(),
+                        name2: values[name2Index].trim(),
+                        name3: values[name3Index].trim(),
+                        veryLow: parseInt(values[veryLowIndex].trim(), 10) || 0,
+                        low: parseInt(values[lowIndex].trim(), 10) || 0,
+                        medium: parseInt(values[mediumIndex].trim(), 10) || 0,
+                        high: parseInt(values[highIndex].trim(), 10) || 0,
+                    };
+                    data.push(row);
+                } else {
+                     console.warn(`Skipping malformed CSV line ${i + 1}: ${lines[i]}`);
+                }
+            }
+            return data;
+        }
+
+        function updateSummaryStats() {
+            if (!summaryStatsOverlayContent) {
+                 console.error("Summary stats overlay content element not found.");
+                 return;
+            }
+            if (!summaryStatsData) {
+                // Keep the loading/error message set by loadSummaryStats
+                console.log("Summary data not available yet for update.");
+                return;
+            }
+
+
+            const selectedName1 = document.getElementById('filter-name1').value;
+            const selectedName2 = document.getElementById('filter-name2').value;
+            const selectedName3 = document.getElementById('filter-name3').value;
+
+            let totalVeryLow = 0;
+            let totalLow = 0;
+            let totalMedium = 0;
+            let totalHigh = 0;
+            let matchFound = false;
+
+            summaryStatsData.forEach(row => {
+                const matchName1 = (selectedName1 === 'all' || row.name1 === selectedName1);
+                const matchName2 = (selectedName2 === 'all' || row.name2 === selectedName2);
+                // Handle 'NA' in CSV for Level 3 matching 'all' or the specific 'NA' value if selected
+                const matchName3 = (selectedName3 === 'all' || row.name3 === selectedName3 || (selectedName3 === 'NA' && row.name3 === 'NA'));
+
+                if (matchName1 && matchName2 && matchName3) {
+                    totalVeryLow += row.veryLow;
+                    totalLow += row.low;
+                    totalMedium += row.medium;
+                    totalHigh += row.high;
+                    matchFound = true;
+                }
+            });
+
+            summaryStatsOverlayContent.className = 'stats-content'; // Reset class
+            if (matchFound) {
+                summaryStatsOverlayContent.innerHTML = `
+                    Very Low: ${totalVeryLow.toLocaleString()}<br>
+                    Low: ${totalLow.toLocaleString()}<br>
+                    Medium: ${totalMedium.toLocaleString()}<br>
+                    High: ${totalHigh.toLocaleString()}
+                `;
+            } else {
+                 // Check if specific selections were made (not all 'all')
+                 if (selectedName1 !== 'all' || selectedName2 !== 'all' || selectedName3 !== 'all') {
+                     summaryStatsOverlayContent.textContent = 'Information not available for current selection.';
+                 } else {
+                     // If all filters are 'all', calculate grand total from all rows
+                     summaryStatsData.forEach(row => {
+                         totalVeryLow += row.veryLow;
+                         totalLow += row.low;
+                         totalMedium += row.medium;
+                         totalHigh += row.high;
+                     });
+                      summaryStatsOverlayContent.innerHTML = `
+                        Very Low: ${totalVeryLow.toLocaleString()}<br>
+                        Low: ${totalLow.toLocaleString()}<br>
+                        Medium: ${totalMedium.toLocaleString()}<br>
+                        High: ${totalHigh.toLocaleString()}
+                    `;
+                 }
+            }
+        }
+
+
+        // ======================
+        // Data Layer Management
+        // ======================
+        function loadDataSource(sourceId) {
+            const config = sourceConfig[sourceId];
+            if (loadedSources.has(sourceId)) return;
+
+             // Check if source already exists from a previous style load maybe?
+            if (map.getSource(sourceId)) {
+                console.log(`Source ${sourceId} already exists.`);
+            } else {
+                map.addSource(sourceId, { type: 'vector', url: config.url });
+            }
+
+             // Check if layer already exists
+             if (map.getLayer(sourceId)) {
+                 console.log(`Layer ${sourceId} already exists.`);
+             } else {
+                map.addLayer({
+                    id: sourceId,
+                    type: 'circle',
+                    source: sourceId,
+                    'source-layer': config.sourceLayer,
+                    minzoom: 0,
+                    paint: {
+                        'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 20, 5],
+                        'circle-opacity': 0.8,
+                        'circle-color': [
+                            'case',
+                            ['==', ['get', 'Degree_of_change'], 'very low'], legendConfig.colors[0],
+                            ['==', ['get', 'Degree_of_change'], 'low'], legendConfig.colors[1],
+                            ['==', ['get', 'Degree_of_change'], 'medium'], legendConfig.colors[2],
+                            ['==', ['get', 'Degree_of_change'], 'high'], legendConfig.colors[3],
+                            '#000000' // Default/fallback color
+                        ],
+                    },
+                    filter: ['!=', ['get', 'id'], ''] // Default filter
+                });
+                initializePopupForLayer(sourceId);
+             }
+
+            loadedSources.add(sourceId);
+
+            // Delay collection slightly to allow source to initialize
+             setTimeout(() => {
+                 collectFilterValuesForSource(sourceId);
+             }, 1000); // Increased delay
+        }
+
+        function initializeDataLayers() {
+            Object.keys(sourceConfig).forEach(sourceId => {
+                loadDataSource(sourceId);
+            });
+            updateSourceVisibility();
+        }
+
+        function updateSourceVisibility() {
+            Object.keys(sourceConfig).forEach(sourceId => {
+                if (map.getLayer(sourceId)) { // Check if layer exists before setting property
+                    const visible = activeSourceFilter === 'all' || activeSourceFilter === sourceId;
+                    map.setLayoutProperty(sourceId, 'visibility', visible ? 'visible' : 'none');
+                } else if (loadedSources.has(sourceId)) {
+                     // If layer should be loaded but isn't, log warning.
+                     console.warn(`Layer ${sourceId} was marked loaded but not found on map during visibility update.`);
+                     // Might happen during style transitions if timing is off
+                }
+            });
+             // When changing source visibility, also update filter options
+             updateFilterOptionsForActiveSource();
+        }
+
+        // ======================
+        // Multi-Filter System
+        // ======================
+        const activeFilters = {
+            degree: 'all',
+            name1: 'all',
+            name2: 'all',
+            name3: 'all'
+        };
+
+        function updateFilters() {
+            const conditions = ['all']; // Start with 'all' condition
+
+            Object.entries(activeFilters).forEach(([type, value]) => {
+                if (value !== 'all') {
+                    const field = type === 'degree' ? 'Degree_of_change' : `NAME_${type.slice(-1)}`;
+                    conditions.push(['==', ['get', field], value]);
+                }
+            });
+
+            Object.keys(sourceConfig).forEach(sourceId => {
+                 if (map.getLayer(sourceId)) { // Check if layer exists
+                     map.setFilter(sourceId, conditions.length > 1 ? conditions : null);
+                 }
+            });
+
+            // Update summary stats whenever map filters change
+            updateSummaryStats();
+        }
+
+         function collectFilterValuesForSource(sourceId) {
+             if (!map.getSource(sourceId)) {
+                 console.warn(`Source ${sourceId} not ready for collecting filter values.`);
+                 return; // Source not loaded yet
+             }
+
+             const filterMap = {
+                 'filter-degree': 'Degree_of_change',
+                 'filter-name1': 'NAME_1',
+                 'filter-name2': 'NAME_2',
+                 'filter-name3': 'NAME_3'
+             };
+
+             // *** Optimization: Only clear 'all' cache once per batch of updates if needed ***
+             // *** Or better: Accumulate 'all' cache values rather than clearing/rebuilding each time ***
+
+             // Clear existing values for this specific source
+             Object.keys(filterMap).forEach(filterId => {
+                 sourceFilterCache[sourceId][filterId].clear();
+             });
+             // Rebuild 'all' cache from *all* currently loaded sources
+             // This is less efficient but ensures 'all' is correct if sources load at different times
+             Object.keys(filterMap).forEach(filterId => sourceFilterCache['all'][filterId].clear());
+
+
+             let features = [];
+             try {
+                 // Only query if the source is actually loaded
+                 if (map.isSourceLoaded(sourceId)) {
+                      features = map.querySourceFeatures(sourceId, {
+                          sourceLayer: sourceConfig[sourceId].sourceLayer
+                      });
+                 } else {
+                     console.warn(`Source ${sourceId} not fully loaded, skipping feature query for filters.`);
+                      return; // Don't proceed if source isn't loaded
+                 }
+             } catch (e) {
+                 console.warn(`Error querying features for ${sourceId} during filter collection:`, e);
+                 return; // Stop processing for this source on error
+             }
+
+
+             // Add unique values to this source's cache
+             features.forEach(feature => {
+                 if (!feature.properties) return;
+                 Object.entries(filterMap).forEach(([filterId, propName]) => {
+                     const value = feature.properties[propName];
+                     if (value !== null && value !== undefined && String(value).trim() !== '') {
+                         const strValue = String(value);
+                         sourceFilterCache[sourceId][filterId].add(strValue);
+                         // No longer add to 'all' here, will do it globally below
+                     }
+                 });
+             });
+
+            // --- Rebuild the 'all' cache from all individual source caches ---
+            Object.keys(sourceConfig).forEach(sId => {
+                if (loadedSources.has(sId)) { // Only consider sources that have been loaded/processed
+                    Object.keys(filterMap).forEach(fId => {
+                        sourceFilterCache[sId][fId].forEach(val => {
+                            sourceFilterCache['all'][fId].add(val);
+                        });
+                    });
+                }
+            });
+            // --- End rebuild 'all' cache ---
+
+
+             console.log(`Collected ${features.length} features for ${sourceId}, filter options will be updated.`);
+             // Update filter options based on the *active* filter selection ('all' or specific)
+             updateFilterOptionsForActiveSource();
+         }
+
+
+         function updateFilterOptionsForActiveSource() {
+             const filterMap = {
+                 'filter-degree': 'Degree_of_change',
+                 'filter-name1': 'NAME_1',
+                 'filter-name2': 'NAME_2',
+                 'filter-name3': 'NAME_3'
+             };
+
+             const currentSource = activeSourceFilter; // Use the globally tracked active source filter
+
+             Object.keys(filterMap).forEach(filterId => {
+                 const select = document.getElementById(filterId);
+                 if (!select) return;
+
+                 const currentValue = select.value; // Store current selection
+                 const currentValuesSet = sourceFilterCache[currentSource]?.[filterId]; // Use optional chaining
+
+                 if (!currentValuesSet) {
+                     console.warn(`Filter cache not ready for source '${currentSource}' and filter '${filterId}'`);
+                      // Clear options if cache is missing? Or leave them? Let's clear.
+                      while (select.options.length > 1) { select.remove(1); }
+                      select.value = 'all'; // Reset to 'all'
+                     return; // Skip if cache is not ready for this source/filter combo
+                 }
+
+                 // Clear existing options (keep "All")
+                 while (select.options.length > 1) {
+                     select.remove(1);
+                 }
+
+                 // Get sorted unique values from the cache for the current source
+                 const values = [...currentValuesSet].sort();
+
+                 // Add new options
+                 values.forEach(value => {
+                     const option = document.createElement('option');
+                     option.value = value;
+                     option.textContent = value;
+                     select.appendChild(option);
+                 });
+
+                 // Try to restore previous selection
+                 if (currentValuesSet.has(currentValue)) {
+                     select.value = currentValue;
+                 } else {
+                     select.value = 'all'; // Default to 'all' if previous value not found
+                     // Also update the activeFilters state if the value is no longer valid
+                     const filterType = filterId.split('-')[1];
+                      if (activeFilters[filterType] !== 'all' && !currentValuesSet.has(activeFilters[filterType])) {
+                           activeFilters[filterType] = 'all';
+                      }
+                 }
+             });
+             // After updating options, ensure the map filters are reapplied based on potentially reset selections
+             updateFilters();
+         }
+
+         function initializeFilters() {
+             const filterSelects = ['filter-degree', 'filter-name1', 'filter-name2', 'filter-name3'];
+
+             filterSelects.forEach(elementId => {
+                 const selectElement = document.getElementById(elementId);
+                 if (selectElement) {
+                     selectElement.addEventListener('change', (e) => {
+                         const filterType = elementId.split('-')[1];
+                         activeFilters[filterType] = e.target.value;
+                         updateFilters(); // This now also calls updateSummaryStats
+                     });
+                 } else {
+                      console.error(`Filter element #${elementId} not found.`);
+                 }
+             });
+
+             const dataSourceSelect = document.getElementById('data-source');
+             if (dataSourceSelect) {
+                  dataSourceSelect.addEventListener('change', (e) => {
+                      const newSourceFilter = e.target.value;
+                      activeSourceFilter = newSourceFilter;
+                      updateSourceVisibility(); // Updates visibility and calls updateFilterOptions
+
+                      // Zoom logic
+                      if (newSourceFilter !== 'all' && sourceConfig[newSourceFilter]) {
+                          const config = sourceConfig[newSourceFilter];
+                          map.flyTo({ center: config.center, zoom: config.zoom, duration: 1500 });
+                      } else if (newSourceFilter === 'all') {
+                          // Broad view for "All Sources" - adjust center/zoom as needed
+                           map.flyTo({ center: [98.0, 16.0], zoom: 5, duration: 1500 }); // Example broader view
+                      }
+                  });
+             } else {
+                 console.error("Data source select element not found.");
+             }
+
+            // Load summary stats data asynchronously
+            loadSummaryStats();
+
+             // Initial population attempt after a short delay, sources might still be loading
+             setTimeout(() => {
+                  console.log("Attempting initial filter value collection for all sources.");
+                 Object.keys(sourceConfig).forEach(sourceId => {
+                      if (map.getSource(sourceId) && map.isSourceLoaded(sourceId)) {
+                           collectFilterValuesForSource(sourceId);
+                      } else {
+                           console.warn(`Source ${sourceId} not ready during initial filter collection.`);
+                           // Rely on 'sourcedata' event to catch it later
+                      }
+                 });
+                 // Initial update based on whatever got collected
+                 updateFilterOptionsForActiveSource();
+             }, 2500); // Delay slightly longer
+
+
+            // Add listener for source data loading to be more robust
+            map.on('sourcedata', (e) => {
+                 // Check if it's one of our sources and if the source is loaded and it's not just metadata update
+                 if (e.isSourceLoaded && e.sourceId && sourceConfig[e.sourceId] && e.sourceDataType !== 'metadata') {
+                    console.log(`Source ${e.sourceId} finished loading data, collecting filter values.`);
+                    collectFilterValuesForSource(e.sourceId); // Collect for the specific source that loaded
+                }
+            });
+         }
+
+        // ======================
+        // Legend System
+        // ======================
+        function initializeLegend() {
+            const legend = document.getElementById('legend');
+            legend.innerHTML = '<div class="legend-header">Degree of Change</div>'; // Clear existing items first
+            legendConfig.layers.forEach((layer, index) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <span class="legend-key" style="background:${legendConfig.colors[index]}"></span>
+                    <span>${layer}</span>
+                `;
+                legend.appendChild(item);
+            });
+        }
+
+        // ======================
+        // Basemap Selector
+        // ======================
+        function initializeBasemapSelector() {
+            const basemapSelect = document.getElementById('basemap');
+            const styles = {
+                'Streets': 'mapbox://styles/mapbox/streets-v12',
+                'Satellite': 'mapbox://styles/mapbox/satellite-streets-v12',
+                'Light': 'mapbox://styles/mapbox/light-v10',
+                'Dark': 'mapbox://styles/mapbox/dark-v10'
+            };
+
+            basemapSelect.innerHTML = ''; // Clear existing options
+
+            // --- Robust style matching ---
+            let currentStyleIdentifier = null;
+            try {
+                // Access style properties safely using optional chaining (?.)
+                const currentStyle = map.getStyle();
+                // Prioritize ID, fall back to URL
+                currentStyleIdentifier = currentStyle?.stylesheet?.id || currentStyle?.stylesheet?.url;
+                if (!currentStyleIdentifier) {
+                     console.warn("Could not reliably get current style identifier from map.getStyle().");
+                }
+            } catch (err) {
+                console.error("Error getting current style:", err);
+            }
+            // --- End robust style matching ---
+
+
+            Object.entries(styles).forEach(([name, url]) => {
+                const opt = document.createElement('option');
+                opt.value = url;
+                opt.text = name;
+
+                // --- Updated selection logic ---
+                let isSelected = false;
+                // Check if the URL from our list matches the identified current style URL or ID
+                if (currentStyleIdentifier && url === currentStyleIdentifier) {
+                    isSelected = true;
+                }
+                // If we couldn't identify the current style, default to 'Streets'
+                else if (!currentStyleIdentifier && name === 'Streets') {
+                    isSelected = true;
+                }
+                opt.selected = isSelected;
+                // --- End updated selection logic ---
+
+                basemapSelect.appendChild(opt);
+            });
+
+
+            basemapSelect.onchange = (e) => {
+                const newStyle = e.target.value;
+                const currentCenter = map.getCenter();
+                const currentZoom = map.getZoom();
+                const currentSourceFilter = activeSourceFilter; // Persist source filter
+                const currentActiveFilters = { ...activeFilters }; // Persist specific filters
+
+                map.setStyle(newStyle);
+
+                map.once('style.load', () => {
+                    console.log("Style loaded, re-initializing layers and filters.");
+                    map.setCenter(currentCenter);
+                    map.setZoom(currentZoom);
+
+                    loadedSources.clear(); // Reset loaded sources tracking
+
+                    // Re-initialize components
+                    initializeDataLayers(); // Reloads sources and layers
+                    initializeLegend(); // Redraw legend if needed
+                    loadSummaryStats(); // Re-load summary stats (might be cached)
+
+                    // Restore states AFTER layers are potentially re-added
+                     setTimeout(() => { // Delay needed for layers to be ready
+                          activeSourceFilter = currentSourceFilter;
+                          Object.assign(activeFilters, currentActiveFilters);
+
+                          // Update UI controls to reflect restored state
+                          document.getElementById('data-source').value = activeSourceFilter;
+                           Object.entries(currentActiveFilters).forEach(([type, value]) => {
+                                const selectId = type === 'degree' ? 'filter-degree' : `filter-name${type.slice(-1)}`;
+                                const select = document.getElementById(selectId);
+                                if (select) {
+                                    // Important: We need to repopulate options before setting value
+                                     updateFilterOptionsForActiveSource(); // Repopulate based on restored activeSourceFilter
+                                     // Now try setting the value
+                                      if (select.querySelector(`option[value="${value}"]`)) {
+                                           select.value = value;
+                                      } else {
+                                          select.value = 'all'; // Fallback if option doesn't exist after reload
+                                          activeFilters[type] = 'all'; // Correct state if value lost
+                                      }
+                                }
+                           });
+
+                          // Final re-application of filters and visibility
+                          updateSourceVisibility();
+                          updateFilters(); // Apply restored filters to map & update summary
+                          console.log("Filters and source visibility restored after style change.");
+
+                     }, 2500); // Adjusted delay
+                });
+            };
+        }
+
+
+        // ======================
+        // Popup Interaction
+        // ======================
+        function initializePopupForLayer(layerId) {
+            const popup = new mapboxgl.Popup({
+                closeButton: false,
+                closeOnClick: false,
+                maxWidth: '400px'
+            });
+
+            map.on('mouseenter', layerId, (e) => {
+                if (!e.features || e.features.length === 0) return;
+                map.getCanvas().style.cursor = 'pointer';
+                const props = e.features[0].properties;
+
+                let sourceLabel = layerId.toUpperCase().replace('DOC', '').replace('_', '-'); // Basic label
+                 // More specific labels if needed
+                 if (layerId === 'doc1') sourceLabel = 'THAILAND-01';
+                 else if (layerId === 'doc2') sourceLabel = 'THAILAND-02';
+                 else if (layerId === 'doc5') sourceLabel = 'THAILAND-05';
+                 else if (layerId === 'doc16') sourceLabel = 'MYANMAR-16';
+                 else if (layerId === 'doc17') sourceLabel = 'MYANMAR-17';
+                 else if (layerId === 'doc18') sourceLabel = 'MYANMAR-18';
+                 else if (layerId === 'doc19_1') sourceLabel = 'MYANMAR-19_1';
+                 else if (layerId === 'doc19_2') sourceLabel = 'MYANMAR-19_2';
+                 else if (layerId === 'doc20') sourceLabel = 'MYANMAR-20';
+                 else sourceLabel = `Source: ${layerId}`;
+
+
+                let html = `<div style="max-height:300px;overflow-y:auto;"><h4>${sourceLabel}</h4>`;
+                Object.entries(props).forEach(([key, val]) => {
+                     // Filter out internal Mapbox props like 'tilequery'
+                     if (val && val !== 'undefined' && !key.startsWith('tilequery')) {
+                         html += `<strong>${key.replace(/_/g, ' ')}:</strong> ${val}<br>`;
+                     }
+                });
+                html += '</div>';
+
+                popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+            });
+
+            map.on('mouseleave', layerId, () => {
+                map.getCanvas().style.cursor = '';
+                popup.remove();
+            });
+        }
+
+        // ======================
+        // Error Handling
+        // ======================
+        function showError(message) {
+            const errorDisplay = document.getElementById('error-display');
+            errorDisplay.textContent = message;
+            errorDisplay.style.display = 'block';
+            document.getElementById('loading').style.display = 'none'; // Hide loading if error occurs
+            console.error(message);
+
+            setTimeout(() => { errorDisplay.style.display = 'none'; }, 5000);
+        }
+
+        window.onerror = function(message, source, lineno, colno, error) {
+            showError(`Unhandled Error: ${message} in ${source} at line ${lineno}`);
+            return true; // Prevents default browser error handling
+        };
+         map.on('error', (e) => {
+             // Handle Mapbox GL specific errors (e.g., token, style loading)
+             showError(`Map Error: ${e.error?.message || 'Unknown map error'}`);
+         });
+
+        // ======================
+        // Main Initialization
+        // ======================
+        map.on('load', () => {
+            document.getElementById('loading').style.display = 'none';
+
+            try {
+                initializeBasemapSelector();
+                initializeDataLayers(); // Start loading data sources
+                initializeFilters();    // Setup filter controls and load summary data
+                initializeLegend();
+
+                 console.log("Map loaded and initial components initialized.");
+
+            } catch (e) {
+                showError(`Initialization error: ${e.message}`); // Show specific error
+                console.error("Initialization failed:", e);      // Log the full error object
+            }
+        });
+
+    </script>
+</body>
+</html>
